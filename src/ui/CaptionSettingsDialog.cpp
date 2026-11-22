@@ -28,7 +28,7 @@ void CaptionSettingsDialog::setupUI() {
     QFormLayout *engineLayout = new QFormLayout();
 
     providerCombo = new QComboBox(this);
-    providerCombo->addItem("🌟 Google Gemini 2.0 Flash (محرك Antigravity - الأفضل للعامية والمصطلحات)", "gemini");
+    providerCombo->addItem("🌟 Google Gemini (محرك Antigravity - الأفضل للعامية والمصطلحات)", "gemini");
     providerCombo->addItem("Groq Whisper Large v3 (محرك Groq السريع)", "groq");
     providerCombo->setStyleSheet("QComboBox { font-weight: bold; font-size: 13px; padding: 4px; }");
     connect(providerCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &CaptionSettingsDialog::onProviderChanged);
@@ -57,8 +57,16 @@ void CaptionSettingsDialog::setupUI() {
     );
     geminiHelpLabel->setOpenExternalLinks(true);
 
+    geminiModelCombo = new QComboBox(geminiKeyRow);
+    geminiModelCombo->setEditable(true);
+    geminiModelCombo->addItem("gemini-3.5-transcribe (🚀 مخصص لتفريغ الصوت والكلام - الأسرع والأدق [موصى به])", "gemini-3.5-transcribe");
+    geminiModelCombo->addItem("gemini-3.8-flash (🌟 الموديل العام الأحدث - Gemini 3.8 Flash)", "gemini-3.8-flash");
+    geminiModelCombo->addItem("gemini-3.5-flash-lite (⚡ خفيف وسريع - Gemini 3.5 Flash Lite)", "gemini-3.5-flash-lite");
+
     gCol->addLayout(gRow);
     gCol->addWidget(geminiHelpLabel);
+    gCol->addWidget(new QLabel("موديل Gemini:", geminiKeyRow));
+    gCol->addWidget(geminiModelCombo);
     engineLayout->addRow("Google Gemini API Key:", geminiKeyRow);
 
     // 2. Groq API Key Row
@@ -299,6 +307,15 @@ void CaptionSettingsDialog::loadSettings(const PluginSettings &s) {
     geminiKeyEdit->setText(QString::fromStdString(s.gemini_api_key));
     groqKeyEdit->setText(QString::fromStdString(s.groq_api_key));
 
+    std::string mod = s.gemini_model.empty() ? "gemini-3.5-transcribe" : s.gemini_model;
+    if (mod == "gemini-2.0-flash" || mod == "gemini-2.5-flash") mod = "gemini-3.5-transcribe";
+    int modIdx = geminiModelCombo->findData(QString::fromStdString(mod));
+    if (modIdx >= 0) {
+        geminiModelCombo->setCurrentIndex(modIdx);
+    } else {
+        geminiModelCombo->setEditText(QString::fromStdString(mod));
+    }
+
     int audioIdx = audioSourceCombo->findData(QString::fromStdString(s.audio_source_name));
     if (audioIdx >= 0) audioSourceCombo->setCurrentIndex(audioIdx);
 
@@ -326,7 +343,13 @@ PluginSettings CaptionSettingsDialog::getSettings() const {
     s.provider = providerCombo->currentData().toString().toStdString();
     s.gemini_api_key = geminiKeyEdit->text().trimmed().toStdString();
     s.groq_api_key = groqKeyEdit->text().trimmed().toStdString();
-    s.gemini_model = "gemini-2.0-flash";
+
+    QString modData = geminiModelCombo->currentData().toString();
+    if (modData.isEmpty()) modData = geminiModelCombo->currentText().trimmed();
+    if (modData.isEmpty() || modData == "gemini-2.0-flash" || modData == "gemini-2.5-flash") {
+        modData = "gemini-3.5-transcribe";
+    }
+    s.gemini_model = modData.toStdString();
     s.groq_model = "whisper-large-v3-turbo";
 
     s.audio_source_name = audioSourceCombo->currentData().toString().toStdString();

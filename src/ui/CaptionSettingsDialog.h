@@ -37,6 +37,7 @@ private:
     QLineEdit *geminiKeyEdit;
     QPushButton *toggleGeminiKeyBtn;
     QLabel *geminiHelpLabel;
+    QComboBox *geminiModelCombo;
 
     QWidget *groqKeyRow;
     QLineEdit *groqKeyEdit;

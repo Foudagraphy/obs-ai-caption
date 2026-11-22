@@ -138,7 +138,10 @@ std::string GeminiClient::transcribe(
         return "";
     }
 
-    std::string modelName = model.empty() ? "gemini-2.0-flash" : model;
+    std::string modelName = model.empty() ? "gemini-3.5-transcribe" : model;
+    if (modelName == "gemini-2.0-flash" || modelName == "gemini-2.5-flash") {
+        modelName = "gemini-3.5-transcribe";
+    }
     std::string path = "/v1beta/models/" + modelName + ":generateContent?key=" + apiKey;
     std::wstring wPath(path.begin(), path.end());
 

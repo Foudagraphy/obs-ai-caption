@@ -11,7 +11,7 @@ struct PluginSettings {
 
     // Google Gemini Settings (The Antigravity Engine)
     std::string gemini_api_key = "";
-    std::string gemini_model = "gemini-2.0-flash";
+    std::string gemini_model = "gemini-3.5-transcribe";
 
     // Groq Settings
     std::string groq_api_key = "";
@@ -62,7 +62,12 @@ struct PluginSettings {
         if (gKey) gemini_api_key = gKey;
 
         const char *gMod = obs_data_get_string(data, "gemini_model");
-        if (gMod && strlen(gMod) > 0) gemini_model = gMod;
+        if (gMod && strlen(gMod) > 0) {
+            gemini_model = gMod;
+            if (gemini_model == "gemini-2.0-flash" || gemini_model == "gemini-2.5-flash") {
+                gemini_model = "gemini-3.5-transcribe";
+            }
+        }
 
         const char *grKey = obs_data_get_string(data, "groq_api_key");
         if (grKey) groq_api_key = grKey;
