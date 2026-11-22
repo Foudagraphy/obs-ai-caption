@@ -59,9 +59,10 @@ void CaptionSettingsDialog::setupUI() {
 
     geminiModelCombo = new QComboBox(geminiKeyRow);
     geminiModelCombo->setEditable(true);
-    geminiModelCombo->addItem("gemini-3.5-transcribe (🚀 مخصص لتفريغ الصوت والكلام - الأسرع والأدق [موصى به])", "gemini-3.5-transcribe");
-    geminiModelCombo->addItem("gemini-3.8-flash (🌟 الموديل العام الأحدث - Gemini 3.8 Flash)", "gemini-3.8-flash");
-    geminiModelCombo->addItem("gemini-3.5-flash-lite (⚡ خفيف وسريع - Gemini 3.5 Flash Lite)", "gemini-3.5-flash-lite");
+    geminiModelCombo->addItem("🌟 gemini-3.5-flash (محرك Antigravity - الأفضل للعامية والمصطلحات والكوتا [موصى به])", "gemini-3.5-flash");
+    geminiModelCombo->addItem("⚡ gemini-3.5-flash-lite (خفيف وسريع جداً)", "gemini-3.5-flash-lite");
+    geminiModelCombo->addItem("gemini-3.8-flash (الموديل العام الأحدث)", "gemini-3.8-flash");
+    geminiModelCombo->addItem("gemini-3.5-transcribe (تفريغ صوتي بحت - كوتا 3 RPM فقط)", "gemini-3.5-transcribe");
 
     gCol->addLayout(gRow);
     gCol->addWidget(geminiHelpLabel);
@@ -307,8 +308,8 @@ void CaptionSettingsDialog::loadSettings(const PluginSettings &s) {
     geminiKeyEdit->setText(QString::fromStdString(s.gemini_api_key));
     groqKeyEdit->setText(QString::fromStdString(s.groq_api_key));
 
-    std::string mod = s.gemini_model.empty() ? "gemini-3.5-transcribe" : s.gemini_model;
-    if (mod == "gemini-2.0-flash" || mod == "gemini-2.5-flash") mod = "gemini-3.5-transcribe";
+    std::string mod = s.gemini_model.empty() ? "gemini-3.5-flash" : s.gemini_model;
+    if (mod == "gemini-2.0-flash" || mod == "gemini-2.5-flash") mod = "gemini-3.5-flash";
     int modIdx = geminiModelCombo->findData(QString::fromStdString(mod));
     if (modIdx >= 0) {
         geminiModelCombo->setCurrentIndex(modIdx);
@@ -347,7 +348,7 @@ PluginSettings CaptionSettingsDialog::getSettings() const {
     QString modData = geminiModelCombo->currentData().toString();
     if (modData.isEmpty()) modData = geminiModelCombo->currentText().trimmed();
     if (modData.isEmpty() || modData == "gemini-2.0-flash" || modData == "gemini-2.5-flash") {
-        modData = "gemini-3.5-transcribe";
+        modData = "gemini-3.5-flash";
     }
     s.gemini_model = modData.toStdString();
     s.groq_model = "whisper-large-v3-turbo";

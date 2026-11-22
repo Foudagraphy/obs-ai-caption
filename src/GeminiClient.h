@@ -14,6 +14,7 @@ public:
         const std::string &apiKey,
         const std::string &model,
         const std::string &customKeywords,
+        const std::string &context = "",
         std::string *outError = nullptr
     );
 
@@ -24,8 +25,11 @@ public:
         const std::string &apiKey,
         const std::string &model,
         const std::string &customKeywords,
+        const std::string &context,
         TranscriptionCallback callback
     );
+
+    static std::string safeExtractJsonString(const std::string &json, const std::string &key);
 
 private:
     static std::string base64Encode(const uint8_t *data, size_t length);

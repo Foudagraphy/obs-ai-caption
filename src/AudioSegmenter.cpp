@@ -21,7 +21,7 @@ AudioSegmenter::~AudioSegmenter() {
 void AudioSegmenter::setParameters(int preRoll, int silenceTimeout, float vad) {
     std::lock_guard<std::mutex> lock(mtx);
     preRollMs = preRoll > 0 ? preRoll : 350;
-    silenceTimeoutMs = silenceTimeout > 0 ? silenceTimeout : 600;
+    silenceTimeoutMs = silenceTimeout > 0 ? silenceTimeout : 750;
     vadThreshold = vad > 0.0f ? vad : 0.010f;
     maxPreRollSamples = static_cast<size_t>((sampleRate * preRollMs) / 1000);
     blog(LOG_INFO, "[AI Captions] VAD parameters: preRoll=%dms, silence=%dms, threshold=%.4f",
@@ -73,9 +73,9 @@ void AudioSegmenter::processSamples(const int16_t *samples, size_t count) {
         currentSpeechSamples.insert(currentSpeechSamples.end(), samples, samples + count);
         lastVoiceTimeMs = now;
 
-        // Continuous speech limit: 6.0 seconds to keep full phrases intact without cutting words
-        if (now - speechStartTimeMs > 6000) {
-            blog(LOG_INFO, "[AI Captions] Continuous phrase limit reached (6.0s) - finalizing segment cleanly");
+        // Continuous speech limit: 7.0 seconds to keep full phrases intact without cutting words
+        if (now - speechStartTimeMs > 7000) {
+            blog(LOG_INFO, "[AI Captions] Continuous phrase limit reached (7.0s) - finalizing segment cleanly");
             finalizeSegment(now);
             isSpeaking = true;
             speechStartTimeMs = now;

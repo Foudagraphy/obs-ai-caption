@@ -1,8 +1,8 @@
 #include "GroqWhisperClient.h"
+#include "GeminiClient.h"
 #include <iostream>
 #include <sstream>
 #include <thread>
-#include <regex>
 #include <chrono>
 #include <obs.h>
 
@@ -13,28 +13,11 @@
 #endif
 
 std::string GroqWhisperClient::extractJsonField(const std::string &json, const std::string &fieldName) {
-    std::string pattern = "\"" + fieldName + "\"\\s*:\\s*\"((?:\\\\\"|[^\"])*)\"";
-    std::regex re(pattern);
-    std::smatch match;
-    if (std::regex_search(json, match, re) && match.size() > 1) {
-        std::string raw = match[1].str();
-        std::string res;
-        for (size_t i = 0; i < raw.length(); ++i) {
-            if (raw[i] == '\\' && i + 1 < raw.length()) {
-                char next = raw[i + 1];
-                if (next == '"') { res += '"'; i++; }
-                else if (next == '\\') { res += '\\'; i++; }
-                else if (next == 'n') { res += '\n'; i++; }
-                else if (next == 'r') { res += '\r'; i++; }
-                else if (next == 't') { res += '\t'; i++; }
-                else { res += raw[i]; }
-            } else {
-                res += raw[i];
-            }
-        }
-        return res;
+    try {
+        return GeminiClient::safeExtractJsonString(json, fieldName);
+    } catch (...) {
+        return "";
     }
-    return "";
 }
 
 std::string GroqWhisperClient::transcribe(
@@ -246,11 +229,23 @@ void GroqWhisperClient::transcribeAsync(
     TranscriptionCallback callback
 ) {
     std::thread([=]() {
-        std::string err;
-        std::string result = transcribe(wavData, apiKey, model, language, customKeywords, &err);
-        bool ok = !result.empty();
-        if (callback) {
-            callback(ok, result, startMs, endMs);
+        try {
+            std::string err;
+            std::string result = transcribe(wavData, apiKey, model, language, customKeywords, &err);
+            bool ok = !result.empty();
+            if (callback) {
+                callback(ok, result, startMs, endMs);
+            }
+        } catch (const std::exception &e) {
+            blog(LOG_ERROR, "[AI Captions] Exception in Groq transcribeAsync thread: %s", e.what());
+            if (callback) {
+                callback(false, "", startMs, endMs);
+            }
+        } catch (...) {
+            blog(LOG_ERROR, "[AI Captions] Unknown exception in Groq transcribeAsync thread");
+            if (callback) {
+                callback(false, "", startMs, endMs);
+            }
         }
     }).detach();
 }

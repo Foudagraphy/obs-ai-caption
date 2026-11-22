@@ -11,7 +11,7 @@ struct PluginSettings {
 
     // Google Gemini Settings (The Antigravity Engine)
     std::string gemini_api_key = "";
-    std::string gemini_model = "gemini-3.5-transcribe";
+    std::string gemini_model = "gemini-3.5-flash";
 
     // Groq Settings
     std::string groq_api_key = "";
@@ -24,7 +24,7 @@ struct PluginSettings {
     // Audio & VAD Settings
     std::string audio_source_name = "Mic/Aux";
     int pre_roll_ms = 350;             // 350ms pre-roll to catch word starts
-    int silence_threshold_ms = 600;    // 0.6s silence detection (natural pause between phrases)
+    int silence_threshold_ms = 750;    // 0.75s silence detection (natural pause between phrases)
     float vad_sensitivity = 0.010f;    // Balanced RMS threshold (~ -40 dB) to eliminate breaths and mic noise
     
     // OBS Text Output Settings
@@ -65,7 +65,7 @@ struct PluginSettings {
         if (gMod && strlen(gMod) > 0) {
             gemini_model = gMod;
             if (gemini_model == "gemini-2.0-flash" || gemini_model == "gemini-2.5-flash") {
-                gemini_model = "gemini-3.5-transcribe";
+                gemini_model = "gemini-3.5-flash";
             }
         }
 

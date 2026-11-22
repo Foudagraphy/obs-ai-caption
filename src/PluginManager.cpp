@@ -105,6 +105,7 @@ void PluginManager::onRecordingStarted() {
     isRecording = true;
     waitingForFinalSrt = false;
     pendingSrtPath.clear();
+    lastTranscribedContext.clear();
 
     auto now = std::chrono::steady_clock::now();
     recordingStartTimeMs = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
@@ -179,6 +180,7 @@ void PluginManager::onSegmentReady(const std::vector<uint8_t> &wavData, int64_t 
             s.gemini_api_key,
             s.gemini_model,
             s.custom_keywords,
+            lastTranscribedContext,
             [this](bool success, const std::string &text, int64_t sMs, int64_t eMs) {
                 this->onTranscriptionResult(success, text, sMs, eMs);
             }
@@ -271,6 +273,7 @@ void PluginManager::onTranscriptionResult(bool success, const std::string &text,
         if (s.srt_enabled) {
             srtWriter->addEntry(startMs, endMs, text);
         }
+        lastTranscribedContext = text;
     }
 
     // If recording was stopped and this was the last pending transcription:
@@ -335,6 +338,7 @@ void PluginManager::startQuickTest(
                     testSettings.gemini_api_key,
                     testSettings.gemini_model,
                     testSettings.custom_keywords,
+                    "",
                     &errorMsg
                 );
             } else {

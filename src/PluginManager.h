@@ -61,6 +61,7 @@ private:
     std::atomic<int> pendingTranscriptions;
     std::atomic<bool> waitingForFinalSrt;
     std::string pendingSrtPath;
+    std::string lastTranscribedContext;
     int64_t recordingStartTimeMs;
 
     mutable std::mutex settingsMutex;
