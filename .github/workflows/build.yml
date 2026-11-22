@@ -21,31 +21,56 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Download OBS Studio & Dependencies
+      - name: Download & Build OBS Development SDK
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path "deps" | Out-Null
           
-          # Download official OBS prebuilt dependencies (Qt6 + libobs)
-          Write-Host "Downloading OBS Studio SDK & Dependencies..."
+          # 1. Download official OBS prebuilt dependencies (Qt6 + windows deps)
+          Write-Host "Downloading OBS dependencies..."
           $obsDepsUrl = "https://github.com/obsproject/obs-deps/releases/download/2025-08-23/windows-deps-2025-08-23-x64.zip"
           $obsQtUrl = "https://github.com/obsproject/obs-deps/releases/download/2025-08-23/windows-deps-qt6-2025-08-23-x64.zip"
           
-          Invoke-WebRequest -Uri $obsDepsUrl -OutFile "deps\obs-deps.zip"
-          Invoke-WebRequest -Uri $obsQtUrl -OutFile "deps\obs-qt.zip"
+          Invoke-WebRequest -Uri $obsDepsUrl -OutFile "deps\deps.zip"
+          Invoke-WebRequest -Uri $obsQtUrl -OutFile "deps\deps_qt.zip"
           
-          Expand-Archive -Path "deps\obs-deps.zip" -DestinationPath "deps\unpacked" -Force
-          Expand-Archive -Path "deps\obs-qt.zip" -DestinationPath "deps\unpacked" -Force
+          Expand-Archive -Path "deps\deps.zip" -DestinationPath "deps\unpacked" -Force
+          Expand-Archive -Path "deps\deps_qt.zip" -DestinationPath "deps\unpacked" -Force
           
-          # Clone libobs headers & CMake configs from obs-studio release
-          git clone --depth 1 --branch 30.2.2 https://github.com/obsproject/obs-studio.git "deps\obs-studio"
+          # 2. Clone OBS Studio source
+          Write-Host "Cloning OBS Studio 32.0.0..."
+          git clone --depth 1 --branch 32.0.0 https://github.com/obsproject/obs-studio.git "deps\obs-studio-src"
+          
+          # 3. Build only Development component (libobs + obs-frontend-api headers and libs)
+          Write-Host "Configuring OBS SDK Development components..."
+          $obsBuildDir = "deps\obs-studio-src\build"
+          $obsInstallDir = "$((Get-Item .).FullName)\deps\build_installed"
+          $obsDepsUnpacked = "$((Get-Item .).FullName)\deps\unpacked"
+          
+          New-Item -ItemType Directory -Force -Path $obsBuildDir | Out-Null
+          
+          cmake -B $obsBuildDir -S "deps\obs-studio-src" `
+            -G "Visual Studio 17 2022" -A x64 `
+            -DENABLE_PLUGINS:BOOL=OFF `
+            -DENABLE_FRONTEND:BOOL=OFF `
+            -DENABLE_SCRIPTING:BOOL=OFF `
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo `
+            -DCMAKE_PREFIX_PATH="$obsDepsUnpacked" `
+            -DCMAKE_INSTALL_PREFIX:PATH="$obsInstallDir"
+          
+          Write-Host "Building obs-frontend-api and libobs..."
+          cmake --build $obsBuildDir --config RelWithDebInfo -t obs-frontend-api --parallel
+          cmake --install $obsBuildDir --config RelWithDebInfo --component Development
 
-      - name: Configure CMake
+      - name: Configure CMake for Plugin
         shell: pwsh
         run: |
+          $obsInstallDir = "$((Get-Item .).FullName)\deps\build_installed"
+          $obsDepsUnpacked = "$((Get-Item .).FullName)\deps\unpacked"
+          
           cmake -B build -S . `
             -G "Visual Studio 17 2022" -A x64 `
-            -DCMAKE_PREFIX_PATH="$PWD/deps/unpacked;$PWD/deps/obs-studio" `
+            -DCMAKE_PREFIX_PATH="$obsInstallDir;$obsDepsUnpacked" `
             -DOBS_PLUGIN_DESTINATION="package"
 
       - name: Build Plugin (Release)
