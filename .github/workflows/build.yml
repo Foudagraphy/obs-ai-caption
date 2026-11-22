@@ -1,0 +1,75 @@
+name: Build OBS AI Closed Captions
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    name: Build Windows x64
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Download OBS Studio & Dependencies
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "deps" | Out-Null
+          
+          # Download official OBS prebuilt dependencies (Qt6 + libobs)
+          Write-Host "Downloading OBS Studio SDK & Dependencies..."
+          $obsDepsUrl = "https://github.com/obsproject/obs-deps/releases/download/2025-08-23/windows-deps-2025-08-23-x64.zip"
+          $obsQtUrl = "https://github.com/obsproject/obs-deps/releases/download/2025-08-23/windows-deps-qt6-2025-08-23-x64.zip"
+          
+          Invoke-WebRequest -Uri $obsDepsUrl -OutFile "deps\obs-deps.zip"
+          Invoke-WebRequest -Uri $obsQtUrl -OutFile "deps\obs-qt.zip"
+          
+          Expand-Archive -Path "deps\obs-deps.zip" -DestinationPath "deps\unpacked" -Force
+          Expand-Archive -Path "deps\obs-qt.zip" -DestinationPath "deps\unpacked" -Force
+          
+          # Clone libobs headers & CMake configs from obs-studio release
+          git clone --depth 1 --branch 30.2.2 https://github.com/obsproject/obs-studio.git "deps\obs-studio"
+
+      - name: Configure CMake
+        shell: pwsh
+        run: |
+          cmake -B build -S . `
+            -G "Visual Studio 17 2022" -A x64 `
+            -DCMAKE_PREFIX_PATH="$PWD/deps/unpacked;$PWD/deps/obs-studio" `
+            -DOBS_PLUGIN_DESTINATION="package"
+
+      - name: Build Plugin (Release)
+        shell: pwsh
+        run: |
+          cmake --build build --config Release --parallel
+
+      - name: Package Plugin & Installer
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "release_pkg/obs-plugins/64bit" | Out-Null
+          
+          # Copy DLL
+          Copy-Item "build/Release/obs-ai-caption.dll" "release_pkg/obs-plugins/64bit/"
+          
+          # Copy installer batch file and documentation
+          Copy-Item "installer/install.bat" "release_pkg/"
+          Copy-Item "installer/README_INSTALL.txt" "release_pkg/"
+          
+          # Create ZIP archive
+          Compress-Archive -Path "release_pkg/*" -DestinationPath "OBS-AI-Captions-Windows-x64.zip" -Force
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OBS-AI-Captions-Windows-x64
+          path: OBS-AI-Captions-Windows-x64.zip
