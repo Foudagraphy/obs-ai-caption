@@ -3,6 +3,7 @@
 #include "WavEncoder.h"
 #include <obs-frontend-api.h>
 #include <obs-module.h>
+#include <sstream>
 #include <regex>
 #include <chrono>
 #include <cmath>
