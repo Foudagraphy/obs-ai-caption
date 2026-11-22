@@ -5,9 +5,9 @@
 
 AudioSegmenter::AudioSegmenter(int sampleRate)
     : sampleRate(sampleRate),
-      preRollMs(400),
-      silenceTimeoutMs(700),
-      vadThreshold(0.005f),
+      preRollMs(350),
+      silenceTimeoutMs(600),
+      vadThreshold(0.010f),
       isSpeaking(false),
       recordingStartTimeMs(0),
       speechStartTimeMs(0),
@@ -20,9 +20,9 @@ AudioSegmenter::~AudioSegmenter() {
 
 void AudioSegmenter::setParameters(int preRoll, int silenceTimeout, float vad) {
     std::lock_guard<std::mutex> lock(mtx);
-    preRollMs = preRoll > 0 ? preRoll : 400;
-    silenceTimeoutMs = silenceTimeout > 0 ? silenceTimeout : 700;
-    vadThreshold = vad > 0.0f ? vad : 0.005f;
+    preRollMs = preRoll > 0 ? preRoll : 350;
+    silenceTimeoutMs = silenceTimeout > 0 ? silenceTimeout : 600;
+    vadThreshold = vad > 0.0f ? vad : 0.010f;
     maxPreRollSamples = static_cast<size_t>((sampleRate * preRollMs) / 1000);
     blog(LOG_INFO, "[AI Captions] VAD parameters: preRoll=%dms, silence=%dms, threshold=%.4f",
          preRollMs, silenceTimeoutMs, vadThreshold);
@@ -65,7 +65,7 @@ void AudioSegmenter::processSamples(const int16_t *samples, size_t count) {
             isSpeaking = true;
             speechStartTimeMs = now - preRollMs;
             currentSpeechSamples.clear();
-            // Prepend all buffered pre-roll audio so initial consonants are intact
+            // Prepend buffered pre-roll audio so the very start of the first word is intact
             currentSpeechSamples.insert(currentSpeechSamples.end(), preRollBuffer.begin(), preRollBuffer.end());
             blog(LOG_INFO, "[AI Captions] Speech START detected (RMS: %.4f >= %.4f)", rms, vadThreshold);
         }
@@ -73,9 +73,9 @@ void AudioSegmenter::processSamples(const int16_t *samples, size_t count) {
         currentSpeechSamples.insert(currentSpeechSamples.end(), samples, samples + count);
         lastVoiceTimeMs = now;
 
-        // Continuous speech limit (3.5 seconds) for fast, responsive real-time captions
-        if (now - speechStartTimeMs > 3500) {
-            blog(LOG_INFO, "[AI Captions] Continuous speech limit reached (3.5s) - slicing segment for real-time display");
+        // Continuous speech limit: 6.0 seconds to keep full phrases intact without cutting words
+        if (now - speechStartTimeMs > 6000) {
+            blog(LOG_INFO, "[AI Captions] Continuous phrase limit reached (6.0s) - finalizing segment cleanly");
             finalizeSegment(now);
             isSpeaking = true;
             speechStartTimeMs = now;
@@ -85,7 +85,7 @@ void AudioSegmenter::processSamples(const int16_t *samples, size_t count) {
         if (isSpeaking) {
             currentSpeechSamples.insert(currentSpeechSamples.end(), samples, samples + count);
             if (now - lastVoiceTimeMs >= silenceTimeoutMs) {
-                blog(LOG_INFO, "[AI Captions] Speech PAUSE detected (%d ms silence) - finalizing segment", silenceTimeoutMs);
+                blog(LOG_INFO, "[AI Captions] Speech PAUSE detected (%d ms silence) - finalizing phrase", silenceTimeoutMs);
                 isSpeaking = false;
                 finalizeSegment(now);
             }
@@ -102,9 +102,19 @@ void AudioSegmenter::processSamples(const int16_t *samples, size_t count) {
 }
 
 void AudioSegmenter::finalizeSegment(int64_t endTimeMs) {
-    // Discard tiny micro clicks (< 250ms)
-    size_t minSamples = static_cast<size_t>(sampleRate * 0.25);
+    // Discard tiny micro clicks / taps (< 600ms)
+    size_t minSamples = static_cast<size_t>(sampleRate * 0.60);
     if (currentSpeechSamples.size() < minSamples) {
+        currentSpeechSamples.clear();
+        return;
+    }
+
+    // Energy Gate: Ensure the segment contains actual speech energy, not just quiet breathing/noise
+    float avgRms = calculateRms(currentSpeechSamples.data(), currentSpeechSamples.size());
+    float minEnergyRequired = vadThreshold * 0.70f;
+    if (avgRms < minEnergyRequired) {
+        blog(LOG_INFO, "[AI Captions] Discarding silent/breathing segment (avg RMS: %.4f < %.4f, duration: %.2fs)",
+             avgRms, minEnergyRequired, static_cast<double>(currentSpeechSamples.size()) / sampleRate);
         currentSpeechSamples.clear();
         return;
     }
@@ -114,9 +124,9 @@ void AudioSegmenter::finalizeSegment(int64_t endTimeMs) {
     if (relStartMs < 0) relStartMs = 0;
     if (relEndMs <= relStartMs) relEndMs = relStartMs + 1000;
 
-    blog(LOG_INFO, "[AI Captions] Segment ready: %zu samples (%.2f s), range: %lld - %lld ms",
+    blog(LOG_INFO, "[AI Captions] Segment ready: %zu samples (%.2f s, avg RMS: %.4f), range: %lld - %lld ms",
          currentSpeechSamples.size(), static_cast<double>(currentSpeechSamples.size()) / sampleRate,
-         relStartMs, relEndMs);
+         avgRms, relStartMs, relEndMs);
 
     std::vector<uint8_t> wavData = WavEncoder::encode16BitMono(currentSpeechSamples.data(), currentSpeechSamples.size(), sampleRate);
     currentSpeechSamples.clear();
@@ -130,13 +140,16 @@ void AudioSegmenter::flush() {
     std::lock_guard<std::mutex> lock(mtx);
     int64_t now = getCurrentTimeMs();
     if (!currentSpeechSamples.empty()) {
-        blog(LOG_INFO, "[AI Captions] AudioSegmenter flush: finalizing %zu buffered samples", currentSpeechSamples.size());
-        finalizeSegment(now);
-        isSpeaking = false;
-    } else if (isSpeaking && !preRollBuffer.empty()) {
-        currentSpeechSamples.insert(currentSpeechSamples.end(), preRollBuffer.begin(), preRollBuffer.end());
-        blog(LOG_INFO, "[AI Captions] AudioSegmenter flush: finalizing %zu pre-roll samples", currentSpeechSamples.size());
-        finalizeSegment(now);
+        float avgRms = calculateRms(currentSpeechSamples.data(), currentSpeechSamples.size());
+        if (avgRms >= vadThreshold * 0.70f && currentSpeechSamples.size() >= static_cast<size_t>(sampleRate * 0.50)) {
+            blog(LOG_INFO, "[AI Captions] AudioSegmenter flush: finalizing %zu buffered speech samples (RMS: %.4f)",
+                 currentSpeechSamples.size(), avgRms);
+            finalizeSegment(now);
+        } else {
+            blog(LOG_INFO, "[AI Captions] AudioSegmenter flush: discarding trailing low-energy samples (%zu samples, RMS: %.4f)",
+                 currentSpeechSamples.size(), avgRms);
+            currentSpeechSamples.clear();
+        }
         isSpeaking = false;
     }
 }

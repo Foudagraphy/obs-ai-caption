@@ -82,24 +82,24 @@ void CaptionSettingsDialog::setupUI() {
     preRollSpin = new QSpinBox(this);
     preRollSpin->setRange(100, 1000);
     preRollSpin->setSingleStep(50);
-    preRollSpin->setValue(400);
+    preRollSpin->setValue(350);
     preRollSpin->setSuffix(" ms");
     audioLayout->addRow("التسجيل المسبق (Pre-roll):\n(يمنع أكل أول حرف في الجملة)", preRollSpin);
 
     silenceTimeoutSpin = new QDoubleSpinBox(this);
     silenceTimeoutSpin->setRange(0.3, 2.0);
     silenceTimeoutSpin->setSingleStep(0.1);
-    silenceTimeoutSpin->setValue(0.7);
+    silenceTimeoutSpin->setValue(0.6);
     silenceTimeoutSpin->setSuffix(" ثانية");
     audioLayout->addRow("مهلة السكوت لتقطيع الجمل:", silenceTimeoutSpin);
 
     vadSlider = new QSlider(Qt::Horizontal, this);
-    vadSlider->setRange(1, 40);
-    vadSlider->setValue(5);
-    vadLabel = new QLabel("عتبة التقاط الصوت: 0.005 (حساسية ممتازة للكلام الطبيعي)", this);
+    vadSlider->setRange(5, 50);
+    vadSlider->setValue(10);
+    vadLabel = new QLabel("عتبة التقاط الصوت: 0.010 (عزل ممتاز لأنفاس المايك والضوضاء)", this);
     connect(vadSlider, &QSlider::valueChanged, [this](int val) {
         float fVal = val / 1000.0f;
-        QString note = (val <= 6) ? "(حساسية عالية - ممتازة)" : (val <= 15 ? "(حساسية متوسطة)" : "(حساسية منخفضة)");
+        QString note = (val <= 10) ? "(حساسية متوازنة - ممتازة)" : (val <= 20 ? "(حساسية متوسطة)" : "(حساسية منخفضة)");
         vadLabel->setText(QString("عتبة التقاط الصوت: %1 %2").arg(fVal, 0, 'f', 3).arg(note));
     });
     audioLayout->addRow(vadLabel, vadSlider);
@@ -251,8 +251,8 @@ void CaptionSettingsDialog::loadSettings(const PluginSettings &s) {
     silenceTimeoutSpin->setValue(s.silence_threshold_ms / 1000.0);
 
     int sliderVal = static_cast<int>(s.vad_sensitivity * 1000);
-    if (sliderVal < 1) sliderVal = 5;
-    if (sliderVal > 40) sliderVal = 40;
+    if (sliderVal < 5) sliderVal = 10;
+    if (sliderVal > 50) sliderVal = 50;
     vadSlider->setValue(sliderVal);
 
     srtMaxCharsSpin->setValue(s.srt_max_line_length);

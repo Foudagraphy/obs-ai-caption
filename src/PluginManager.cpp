@@ -182,17 +182,58 @@ void PluginManager::onSegmentReady(const std::vector<uint8_t> &wavData, int64_t 
     );
 }
 
-bool PluginManager::isHallucination(const std::string &text) {
+bool PluginManager::isHallucination(const std::string &rawText) {
+    std::string text = rawText;
+    while (!text.empty() && (text.front() == ' ' || text.front() == '\t' || text.front() == '\r' || text.front() == '\n')) {
+        text.erase(text.begin());
+    }
+    while (!text.empty() && (text.back() == ' ' || text.back() == '\t' || text.back() == '\r' || text.back() == '\n')) {
+        text.pop_back();
+    }
+
     if (text.length() < 2) return true;
 
+    // Check for repetitive word loops like "Closed, Closed, Closed"
+    {
+        std::istringstream iss(text);
+        std::string word;
+        std::vector<std::string> words;
+        while (iss >> word) {
+            std::string clean;
+            for (char c : word) {
+                if (isalnum((unsigned char)c) || (c & 0x80)) clean += (char)tolower((unsigned char)c);
+            }
+            if (!clean.empty()) words.push_back(clean);
+        }
+        if (words.size() >= 3) {
+            bool allSame = true;
+            for (size_t i = 1; i < words.size(); ++i) {
+                if (words[i] != words[0]) {
+                    allSame = false;
+                    break;
+                }
+            }
+            if (allSame) {
+                blog(LOG_INFO, "[AI Captions] Hallucination filtered out (repetitive loop): \"%s\"", text.c_str());
+                return true;
+            }
+        }
+    }
+
+    // Subtitle credits and hallucinated YouTube phrases
     static const std::vector<std::string> bannedPhrases = {
-        "اشترك في القناة", "شكرا للمشاهدة", "شكراً للمشاهدة",
-        "تفعيل الجرس", "لا تنسوا الاشتراك", "thank you for watching",
-        "thanks for watching", "subtitles by", "Sous-titres réalisés"
+        "نانسي", "قنقر", "ترجمة", "المترجمات", "اشترك في القناة", "اشتراك",
+        "تفعيل الجرس", "لا تنسوا الاشتراك", "شكرا للمشاهدة", "شكراً للمشاهدة",
+        "closed, closed", "Closed, Closed", "thank you for watching",
+        "thanks for watching", "subtitles by", "Sous-titres", "amara.org"
     };
 
     for (const auto &phrase : bannedPhrases) {
-        if (text.find(phrase) != std::string::npos) return true;
+        if (text.find(phrase) != std::string::npos) {
+            blog(LOG_INFO, "[AI Captions] Hallucination filtered out (banned token '%s'): \"%s\"",
+                 phrase.c_str(), text.c_str());
+            return true;
+        }
     }
     return false;
 }

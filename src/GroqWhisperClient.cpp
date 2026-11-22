@@ -105,7 +105,11 @@ std::string GroqWhisperClient::transcribe(
 
     // Prepare multipart form data
     std::string boundary = "----OBSCaptionBoundaryX992819";
-    std::string promptText = "ترجمة بالعامية المصرية بمصطلحات إنجليزية تقنية وتطبيقات: " + customKeywords;
+    // Vocabulary biasing prompt without "ترجمة" to prevent YouTube translator credits hallucinations
+    std::string promptText = customKeywords;
+    if (!promptText.empty()) {
+        promptText += ". مصطلحات تقنية وتصميم وتصوير ومونتاج بالعامية.";
+    }
 
     std::ostringstream bodyStream;
     // 1. model
