@@ -7,6 +7,7 @@
 #include <QSlider>
 #include <QCheckBox>
 #include <QSpinBox>
+#include <QDoubleSpinBox>
 #include <QLabel>
 #include <QPushButton>
 #include "../PluginSettings.h"
@@ -25,6 +26,7 @@ private slots:
     void onSaveClicked();
     void onCancelClicked();
     void onToggleKeyVisibility();
+    void onTestClicked();
 
 private:
     QLineEdit *apiKeyEdit;
@@ -33,16 +35,19 @@ private:
     QComboBox *audioSourceCombo;
     QComboBox *textSourceCombo;
     QTextEdit *customKeywordsEdit;
-    
+
     QSpinBox *preRollSpin;
     QDoubleSpinBox *silenceTimeoutSpin;
     QSlider *vadSlider;
     QLabel *vadLabel;
-    
+
     QCheckBox *syncRecordingCheck;
     QCheckBox *autoClearCheck;
     QCheckBox *saveSrtCheck;
     QSpinBox *srtMaxCharsSpin;
+
+    QPushButton *testBtn;
+    QLabel *testStatusLabel;
 
     QPushButton *saveBtn;
     QPushButton *cancelBtn;

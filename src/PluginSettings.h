@@ -15,8 +15,8 @@ struct PluginSettings {
     // Audio & VAD Settings
     std::string audio_source_name = "Mic/Aux";
     int pre_roll_ms = 400;             // 400ms pre-roll to catch word starts
-    int silence_threshold_ms = 800;    // 0.8s silence detection
-    float vad_sensitivity = 0.02f;     // RMS energy threshold
+    int silence_threshold_ms = 700;    // 0.7s silence detection
+    float vad_sensitivity = 0.005f;    // Sensitive RMS threshold (~ -46 dB) suitable for normal speaking
     
     // OBS Text Output Settings
     std::string text_source_name = "Captions";
@@ -60,6 +60,7 @@ struct PluginSettings {
 
         double vad = obs_data_get_double(data, "vad_sensitivity");
         if (vad > 0.0) vad_sensitivity = (float)vad;
+        else vad_sensitivity = 0.005f;
 
         const char *tsrc = obs_data_get_string(data, "text_source_name");
         if (tsrc && strlen(tsrc) > 0) text_source_name = tsrc;

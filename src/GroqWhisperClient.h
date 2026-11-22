@@ -14,7 +14,8 @@ public:
         const std::string &apiKey,
         const std::string &model,
         const std::string &language,
-        const std::string &customKeywords
+        const std::string &customKeywords,
+        std::string *outError = nullptr
     );
 
     // Asynchronous helper

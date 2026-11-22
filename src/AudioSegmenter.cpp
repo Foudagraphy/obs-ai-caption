@@ -1,12 +1,13 @@
 #include "AudioSegmenter.h"
 #include "WavEncoder.h"
 #include <cmath>
+#include <obs.h>
 
 AudioSegmenter::AudioSegmenter(int sampleRate)
     : sampleRate(sampleRate),
       preRollMs(400),
-      silenceTimeoutMs(800),
-      vadThreshold(0.02f),
+      silenceTimeoutMs(700),
+      vadThreshold(0.005f),
       isSpeaking(false),
       recordingStartTimeMs(0),
       speechStartTimeMs(0),
@@ -20,9 +21,11 @@ AudioSegmenter::~AudioSegmenter() {
 void AudioSegmenter::setParameters(int preRoll, int silenceTimeout, float vad) {
     std::lock_guard<std::mutex> lock(mtx);
     preRollMs = preRoll > 0 ? preRoll : 400;
-    silenceTimeoutMs = silenceTimeout > 0 ? silenceTimeout : 800;
-    vadThreshold = vad > 0.0f ? vad : 0.02f;
+    silenceTimeoutMs = silenceTimeout > 0 ? silenceTimeout : 700;
+    vadThreshold = vad > 0.0f ? vad : 0.005f;
     maxPreRollSamples = static_cast<size_t>((sampleRate * preRollMs) / 1000);
+    blog(LOG_INFO, "[AI Captions] VAD parameters: preRoll=%dms, silence=%dms, threshold=%.4f",
+         preRollMs, silenceTimeoutMs, vadThreshold);
 }
 
 void AudioSegmenter::setCallback(SegmentCallback cb) {
@@ -64,13 +67,15 @@ void AudioSegmenter::processSamples(const int16_t *samples, size_t count) {
             currentSpeechSamples.clear();
             // Prepend all buffered pre-roll audio so initial consonants are intact
             currentSpeechSamples.insert(currentSpeechSamples.end(), preRollBuffer.begin(), preRollBuffer.end());
+            blog(LOG_INFO, "[AI Captions] Speech START detected (RMS: %.4f >= %.4f)", rms, vadThreshold);
         }
 
         currentSpeechSamples.insert(currentSpeechSamples.end(), samples, samples + count);
         lastVoiceTimeMs = now;
 
-        // Max speech length safeguard (10s)
-        if (now - speechStartTimeMs > 10000) {
+        // Continuous speech limit (3.5 seconds) for fast, responsive real-time captions
+        if (now - speechStartTimeMs > 3500) {
+            blog(LOG_INFO, "[AI Captions] Continuous speech limit reached (3.5s) - slicing segment for real-time display");
             finalizeSegment(now);
             isSpeaking = true;
             speechStartTimeMs = now;
@@ -80,6 +85,7 @@ void AudioSegmenter::processSamples(const int16_t *samples, size_t count) {
         if (isSpeaking) {
             currentSpeechSamples.insert(currentSpeechSamples.end(), samples, samples + count);
             if (now - lastVoiceTimeMs >= silenceTimeoutMs) {
+                blog(LOG_INFO, "[AI Captions] Speech PAUSE detected (%d ms silence) - finalizing segment", silenceTimeoutMs);
                 isSpeaking = false;
                 finalizeSegment(now);
             }
@@ -96,8 +102,8 @@ void AudioSegmenter::processSamples(const int16_t *samples, size_t count) {
 }
 
 void AudioSegmenter::finalizeSegment(int64_t endTimeMs) {
-    // Discard tiny micro clicks (< 300ms)
-    size_t minSamples = static_cast<size_t>(sampleRate * 0.3);
+    // Discard tiny micro clicks (< 250ms)
+    size_t minSamples = static_cast<size_t>(sampleRate * 0.25);
     if (currentSpeechSamples.size() < minSamples) {
         currentSpeechSamples.clear();
         return;
@@ -107,6 +113,10 @@ void AudioSegmenter::finalizeSegment(int64_t endTimeMs) {
     int64_t relEndMs = recordingStartTimeMs > 0 ? (endTimeMs - recordingStartTimeMs) : (endTimeMs - speechStartTimeMs);
     if (relStartMs < 0) relStartMs = 0;
     if (relEndMs <= relStartMs) relEndMs = relStartMs + 1000;
+
+    blog(LOG_INFO, "[AI Captions] Segment ready: %zu samples (%.2f s), range: %lld - %lld ms",
+         currentSpeechSamples.size(), static_cast<double>(currentSpeechSamples.size()) / sampleRate,
+         relStartMs, relEndMs);
 
     std::vector<uint8_t> wavData = WavEncoder::encode16BitMono(currentSpeechSamples.data(), currentSpeechSamples.size(), sampleRate);
     currentSpeechSamples.clear();
@@ -118,8 +128,14 @@ void AudioSegmenter::finalizeSegment(int64_t endTimeMs) {
 
 void AudioSegmenter::flush() {
     std::lock_guard<std::mutex> lock(mtx);
-    if (isSpeaking && !currentSpeechSamples.empty()) {
-        int64_t now = getCurrentTimeMs();
+    int64_t now = getCurrentTimeMs();
+    if (!currentSpeechSamples.empty()) {
+        blog(LOG_INFO, "[AI Captions] AudioSegmenter flush: finalizing %zu buffered samples", currentSpeechSamples.size());
+        finalizeSegment(now);
+        isSpeaking = false;
+    } else if (isSpeaking && !preRollBuffer.empty()) {
+        currentSpeechSamples.insert(currentSpeechSamples.end(), preRollBuffer.begin(), preRollBuffer.end());
+        blog(LOG_INFO, "[AI Captions] AudioSegmenter flush: finalizing %zu pre-roll samples", currentSpeechSamples.size());
         finalizeSegment(now);
         isSpeaking = false;
     }

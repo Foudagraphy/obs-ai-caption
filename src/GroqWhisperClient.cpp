@@ -3,6 +3,8 @@
 #include <sstream>
 #include <thread>
 #include <regex>
+#include <chrono>
+#include <obs.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -40,13 +42,21 @@ std::string GroqWhisperClient::transcribe(
     const std::string &apiKey,
     const std::string &model,
     const std::string &language,
-    const std::string &customKeywords
+    const std::string &customKeywords,
+    std::string *outError
 ) {
-    if (wavData.empty() || apiKey.empty()) {
+    if (wavData.empty()) {
+        if (outError) *outError = "بيانات الصوت فارغة (No audio data)";
+        return "";
+    }
+    if (apiKey.empty()) {
+        if (outError) *outError = "مفتاح Groq API Key غير محدد";
         return "";
     }
 
 #ifdef _WIN32
+    auto startTime = std::chrono::steady_clock::now();
+
     HINTERNET hSession = WinHttpOpen(
         L"OBS-AI-Caption-Plugin/1.0",
         WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
@@ -54,7 +64,12 @@ std::string GroqWhisperClient::transcribe(
         WINHTTP_NO_PROXY_BYPASS,
         0
     );
-    if (!hSession) return "";
+    if (!hSession) {
+        DWORD err = GetLastError();
+        blog(LOG_ERROR, "[AI Captions] WinHttpOpen failed: %lu", err);
+        if (outError) *outError = "فشل إنشاء اتصال WinHTTP (Error: " + std::to_string(err) + ")";
+        return "";
+    }
 
     HINTERNET hConnect = WinHttpConnect(
         hSession,
@@ -63,6 +78,9 @@ std::string GroqWhisperClient::transcribe(
         0
     );
     if (!hConnect) {
+        DWORD err = GetLastError();
+        blog(LOG_ERROR, "[AI Captions] WinHttpConnect to api.groq.com failed: %lu", err);
+        if (outError) *outError = "تعذر الاتصال بسيرفر api.groq.com (Error: " + std::to_string(err) + ")";
         WinHttpCloseHandle(hSession);
         return "";
     }
@@ -77,6 +95,9 @@ std::string GroqWhisperClient::transcribe(
         WINHTTP_FLAG_SECURE
     );
     if (!hRequest) {
+        DWORD err = GetLastError();
+        blog(LOG_ERROR, "[AI Captions] WinHttpOpenRequest failed: %lu", err);
+        if (outError) *outError = "فشل فتح طلب HTTP (Error: " + std::to_string(err) + ")";
         WinHttpCloseHandle(hConnect);
         WinHttpCloseHandle(hSession);
         return "";
@@ -134,6 +155,8 @@ std::string GroqWhisperClient::transcribe(
     std::wstring auth = L"Authorization: Bearer " + std::wstring(apiKey.begin(), apiKey.end()) + L"\r\n";
     headers += auth;
 
+    blog(LOG_INFO, "[AI Captions] Sending %zu bytes audio to Groq Whisper (%s)...", wavData.size(), model.c_str());
+
     BOOL bResults = WinHttpSendRequest(
         hRequest,
         headers.c_str(),
@@ -144,33 +167,66 @@ std::string GroqWhisperClient::transcribe(
         0
     );
 
+    if (!bResults) {
+        DWORD err = GetLastError();
+        blog(LOG_ERROR, "[AI Captions] WinHttpSendRequest failed with error: %lu", err);
+        if (outError) *outError = "فشل إرسال الصوت لسيرفر Groq (Error: " + std::to_string(err) + ")";
+        WinHttpCloseHandle(hRequest);
+        WinHttpCloseHandle(hConnect);
+        WinHttpCloseHandle(hSession);
+        return "";
+    }
+
+    bResults = WinHttpReceiveResponse(hRequest, NULL);
+    if (!bResults) {
+        DWORD err = GetLastError();
+        blog(LOG_ERROR, "[AI Captions] WinHttpReceiveResponse failed with error: %lu", err);
+        if (outError) *outError = "فشل استقبال الرد من Groq (Error: " + std::to_string(err) + ")";
+        WinHttpCloseHandle(hRequest);
+        WinHttpCloseHandle(hConnect);
+        WinHttpCloseHandle(hSession);
+        return "";
+    }
+
+    // Check HTTP status code
+    DWORD dwStatusCode = 0;
+    DWORD dwSize = sizeof(dwStatusCode);
+    WinHttpQueryHeaders(hRequest, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+                        WINHTTP_HEADER_NAME_BY_INDEX, &dwStatusCode, &dwSize, WINHTTP_NO_HEADER_INDEX);
+
     std::string responseString = "";
-    if (bResults) {
-        bResults = WinHttpReceiveResponse(hRequest, NULL);
-    }
+    DWORD dwDownloaded = 0;
+    do {
+        dwSize = 0;
+        if (!WinHttpQueryDataAvailable(hRequest, &dwSize)) break;
+        if (dwSize == 0) break;
 
-    if (bResults) {
-        DWORD dwSize = 0;
-        DWORD dwDownloaded = 0;
-        do {
-            dwSize = 0;
-            if (!WinHttpQueryDataAvailable(hRequest, &dwSize)) break;
-            if (dwSize == 0) break;
-
-            std::vector<char> buffer(dwSize + 1, 0);
-            if (WinHttpReadData(hRequest, buffer.data(), dwSize, &dwDownloaded)) {
-                responseString.append(buffer.data(), dwDownloaded);
-            }
-        } while (dwSize > 0);
-    }
+        std::vector<char> buffer(dwSize + 1, 0);
+        if (WinHttpReadData(hRequest, buffer.data(), dwSize, &dwDownloaded)) {
+            responseString.append(buffer.data(), dwDownloaded);
+        }
+    } while (dwSize > 0);
 
     WinHttpCloseHandle(hRequest);
     WinHttpCloseHandle(hConnect);
     WinHttpCloseHandle(hSession);
 
-    return extractJsonField(responseString, "text");
+    auto endTime = std::chrono::steady_clock::now();
+    int64_t elapsedMs = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+
+    if (dwStatusCode != 200) {
+        blog(LOG_ERROR, "[AI Captions] Groq API returned HTTP error %lu: %s", dwStatusCode, responseString.c_str());
+        std::string apiErr = extractJsonField(responseString, "message");
+        if (apiErr.empty()) apiErr = responseString;
+        if (outError) *outError = "Groq HTTP " + std::to_string(dwStatusCode) + ": " + apiErr;
+        return "";
+    }
+
+    std::string text = extractJsonField(responseString, "text");
+    blog(LOG_INFO, "[AI Captions] Groq Whisper responded in %lld ms: \"%s\"", elapsedMs, text.c_str());
+    return text;
 #else
-    // Fallback for non-windows
+    if (outError) *outError = "Non-Windows platform not supported";
     return "";
 #endif
 }
@@ -186,7 +242,8 @@ void GroqWhisperClient::transcribeAsync(
     TranscriptionCallback callback
 ) {
     std::thread([=]() {
-        std::string result = transcribe(wavData, apiKey, model, language, customKeywords);
+        std::string err;
+        std::string result = transcribe(wavData, apiKey, model, language, customKeywords, &err);
         bool ok = !result.empty();
         if (callback) {
             callback(ok, result, startMs, endMs);

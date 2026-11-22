@@ -1,4 +1,5 @@
 #include "CaptionSettingsDialog.h"
+#include "../PluginManager.h"
 #include <QVBoxLayout>
 #include <QHBoxLayout>
 #include <QFormLayout>
@@ -9,7 +10,7 @@
 CaptionSettingsDialog::CaptionSettingsDialog(QWidget *parent)
     : QDialog(parent) {
     setWindowTitle("AI Closed Captions Settings - مساعد الترجمة الذكي");
-    resize(540, 560);
+    resize(580, 620);
     setupUI();
     populateObsSources();
 }
@@ -28,7 +29,7 @@ void CaptionSettingsDialog::setupUI() {
     apiKeyEdit = new QLineEdit(this);
     apiKeyEdit->setEchoMode(QLineEdit::Password);
     apiKeyEdit->setPlaceholderText("gsk_...");
-    
+
     toggleKeyBtn = new QPushButton("👁️", this);
     toggleKeyBtn->setFixedWidth(36);
     connect(toggleKeyBtn, &QPushButton::clicked, this, &CaptionSettingsDialog::onToggleKeyVisibility);
@@ -86,18 +87,20 @@ void CaptionSettingsDialog::setupUI() {
     audioLayout->addRow("التسجيل المسبق (Pre-roll):\n(يمنع أكل أول حرف في الجملة)", preRollSpin);
 
     silenceTimeoutSpin = new QDoubleSpinBox(this);
-    silenceTimeoutSpin->setRange(0.4, 2.0);
+    silenceTimeoutSpin->setRange(0.3, 2.0);
     silenceTimeoutSpin->setSingleStep(0.1);
-    silenceTimeoutSpin->setValue(0.8);
+    silenceTimeoutSpin->setValue(0.7);
     silenceTimeoutSpin->setSuffix(" ثانية");
     audioLayout->addRow("مهلة السكوت لتقطيع الجمل:", silenceTimeoutSpin);
 
     vadSlider = new QSlider(Qt::Horizontal, this);
-    vadSlider->setRange(5, 80);
-    vadSlider->setValue(20);
-    vadLabel = new QLabel("عتبة التقاط الصوت: 0.020", this);
+    vadSlider->setRange(1, 40);
+    vadSlider->setValue(5);
+    vadLabel = new QLabel("عتبة التقاط الصوت: 0.005 (حساسية ممتازة للكلام الطبيعي)", this);
     connect(vadSlider, &QSlider::valueChanged, [this](int val) {
-        vadLabel->setText(QString("عتبة التقاط الصوت: %1").arg(val / 1000.0, 0, 'f', 3));
+        float fVal = val / 1000.0f;
+        QString note = (val <= 6) ? "(حساسية عالية - ممتازة)" : (val <= 15 ? "(حساسية متوسطة)" : "(حساسية منخفضة)");
+        vadLabel->setText(QString("عتبة التقاط الصوت: %1 %2").arg(fVal, 0, 'f', 3).arg(note));
     });
     audioLayout->addRow(vadLabel, vadSlider);
 
@@ -110,15 +113,47 @@ void CaptionSettingsDialog::setupUI() {
 
     mainLayout->addWidget(tabs);
 
-    // Dialog buttons
+    // --- Quick Test Section ---
+    QGroupBox *testGroup = new QGroupBox("🎙️ اختبار فوري للمايك والذكاء الاصطناعي (Quick Test)", this);
+    QVBoxLayout *testGroupLayout = new QVBoxLayout(testGroup);
+
+    QHBoxLayout *testBtnLayout = new QHBoxLayout();
+    testBtn = new QPushButton("🎙️ بدء اختبار المايك والذكاء الاصطناعي (3 ثوانٍ)", this);
+    testBtn->setStyleSheet(
+        "QPushButton {"
+        "  background-color: #0078d4;"
+        "  color: white;"
+        "  font-weight: bold;"
+        "  font-size: 13px;"
+        "  padding: 8px 18px;"
+        "  border-radius: 5px;"
+        "}"
+        "QPushButton:hover { background-color: #106ebe; }"
+        "QPushButton:disabled { background-color: #888; color: #ccc; }"
+    );
+    connect(testBtn, &QPushButton::clicked, this, &CaptionSettingsDialog::onTestClicked);
+    testBtnLayout->addWidget(testBtn);
+
+    testStatusLabel = new QLabel("اضغط للتحدث 3 ثوانٍ والتأكد من استجابة المايك وترجمة Groq فوراً دون الحاجة لتسجيل فيديو.", this);
+    testStatusLabel->setWordWrap(true);
+    testStatusLabel->setStyleSheet("color: #444; font-size: 12px; padding: 4px;");
+
+    testGroupLayout->addLayout(testBtnLayout);
+    testGroupLayout->addWidget(testStatusLabel);
+
+    mainLayout->addWidget(testGroup);
+
+    // Dialog action buttons
     QHBoxLayout *btnLayout = new QHBoxLayout();
     btnLayout->addStretch();
     saveBtn = new QPushButton("حفظ الإعدادات", this);
     saveBtn->setDefault(true);
+    saveBtn->setStyleSheet("QPushButton { font-weight: bold; padding: 6px 16px; }");
     connect(saveBtn, &QPushButton::clicked, this, &CaptionSettingsDialog::onSaveClicked);
     btnLayout->addWidget(saveBtn);
 
     cancelBtn = new QPushButton("إلغاء", this);
+    cancelBtn->setStyleSheet("QPushButton { padding: 6px 16px; }");
     connect(cancelBtn, &QPushButton::clicked, this, &CaptionSettingsDialog::onCancelClicked);
     btnLayout->addWidget(cancelBtn);
 
@@ -141,13 +176,17 @@ void CaptionSettingsDialog::populateObsSources() {
         const char *id = obs_source_get_id(source);
 
         if ((flags & OBS_SOURCE_AUDIO) != 0) {
-            dlg->audioSourceCombo->addItem(name, name);
+            if (dlg->audioSourceCombo->findData(name) < 0) {
+                dlg->audioSourceCombo->addItem(name, name);
+            }
         }
 
         if (id && (strcmp(id, "text_gdiplus") == 0 || strcmp(id, "text_gdiplus_v2") == 0 ||
                    strcmp(id, "text_gdiplus_v3") == 0 || strcmp(id, "text_ft2_source") == 0 ||
                    strcmp(id, "text_ft2_source_v2") == 0)) {
-            dlg->textSourceCombo->addItem(name, name);
+            if (dlg->textSourceCombo->findData(name) < 0) {
+                dlg->textSourceCombo->addItem(name, name);
+            }
         }
 
         return true;
@@ -166,9 +205,38 @@ void CaptionSettingsDialog::onToggleKeyVisibility() {
     }
 }
 
+void CaptionSettingsDialog::onTestClicked() {
+    PluginSettings current = getSettings();
+    if (current.api_key.empty()) {
+        testStatusLabel->setText("<span style='color: #d9534f; font-weight: bold;'>⚠️ يرجى كتابة Groq API Key أولاً!</span>");
+        return;
+    }
+
+    testBtn->setEnabled(false);
+    testStatusLabel->setText("<span style='color: #e67e22; font-weight: bold;'>🔴 جاري الاستماع للميكروفون لمدة 3 ثوانٍ... تكلم الآن بصوتك!</span>");
+
+    PluginManager::instance().startQuickTest(current, 3, [this](bool ok, const std::string &msg) {
+        // Safe dispatch back to Qt main GUI thread
+        QMetaObject::invokeMethod(this, [this, ok, msg]() {
+            testBtn->setEnabled(true);
+            if (ok) {
+                testStatusLabel->setText(
+                    QString("<span style='color: #27ae60; font-weight: bold;'>✅ نجح الاختبار بنجاح!<br>النص المترجم: \"%1\"<br>(تم إرسال النص إلى شاشة OBS أيضاً!)</span>")
+                    .arg(QString::fromStdString(msg))
+                );
+            } else {
+                testStatusLabel->setText(
+                    QString("<span style='color: #e74c3c; font-weight: bold;'>❌ فشل الاختبار: %1</span>")
+                    .arg(QString::fromStdString(msg))
+                );
+            }
+        }, Qt::QueuedConnection);
+    });
+}
+
 void CaptionSettingsDialog::loadSettings(const PluginSettings &s) {
     apiKeyEdit->setText(QString::fromStdString(s.api_key));
-    
+
     int modelIdx = modelCombo->findData(QString::fromStdString(s.model));
     if (modelIdx >= 0) modelCombo->setCurrentIndex(modelIdx);
 
@@ -181,7 +249,12 @@ void CaptionSettingsDialog::loadSettings(const PluginSettings &s) {
     customKeywordsEdit->setPlainText(QString::fromStdString(s.custom_keywords));
     preRollSpin->setValue(s.pre_roll_ms);
     silenceTimeoutSpin->setValue(s.silence_threshold_ms / 1000.0);
-    vadSlider->setValue(static_cast<int>(s.vad_sensitivity * 1000));
+
+    int sliderVal = static_cast<int>(s.vad_sensitivity * 1000);
+    if (sliderVal < 1) sliderVal = 5;
+    if (sliderVal > 40) sliderVal = 40;
+    vadSlider->setValue(sliderVal);
+
     srtMaxCharsSpin->setValue(s.srt_max_line_length);
 
     syncRecordingCheck->setChecked(s.sync_with_recording);

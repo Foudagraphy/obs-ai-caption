@@ -9,6 +9,7 @@
 #include <memory>
 #include <mutex>
 #include <atomic>
+#include <functional>
 
 class PluginManager {
 public:
@@ -34,6 +35,17 @@ public:
     void loadSettings(obs_data_t *data);
     void saveSettings(obs_data_t *data);
 
+    // Persistent JSON config file
+    void loadFromConfigFile();
+    void saveToConfigFile();
+
+    // Quick Test feature
+    void startQuickTest(
+        const PluginSettings &testSettings,
+        int durationSec,
+        std::function<void(bool ok, const std::string &message)> callback
+    );
+
 private:
     PluginManager();
     ~PluginManager();
@@ -46,7 +58,9 @@ private:
 
     std::atomic<bool> isCaptioning;
     std::atomic<bool> isRecording;
-    std::string currentRecordingVideoPath;
+    std::atomic<int> pendingTranscriptions;
+    std::atomic<bool> waitingForFinalSrt;
+    std::string pendingSrtPath;
     int64_t recordingStartTimeMs;
 
     mutable std::mutex settingsMutex;
