@@ -25,6 +25,7 @@ set(SOURCES
     src/AudioCaptureSession.cpp
     src/AudioSegmenter.cpp
     src/GroqWhisperClient.cpp
+    src/GeminiClient.cpp
     src/SrtWriter.cpp
     src/TextOutputWriter.cpp
 )
@@ -35,6 +36,7 @@ set(HEADERS
     src/AudioCaptureSession.h
     src/AudioSegmenter.h
     src/GroqWhisperClient.h
+    src/GeminiClient.h
     src/WavEncoder.h
     src/SrtWriter.h
     src/TextOutputWriter.h

@@ -1,5 +1,6 @@
 #include "PluginManager.h"
 #include "GroqWhisperClient.h"
+#include "GeminiClient.h"
 #include "WavEncoder.h"
 #include <obs-frontend-api.h>
 #include <obs-module.h>
@@ -66,10 +67,11 @@ PluginSettings PluginManager::getSettings() {
 
 bool PluginManager::startCaptioning() {
     PluginSettings s = getSettings();
-    if (s.api_key.empty()) {
+    if (s.getActiveApiKey().empty()) {
         textWriter->setSourceName(s.text_source_name);
-        textWriter->updateText("⚠️ [AI Captions] يرجى إدخال مفتاح Groq API Key في قائمة Tools");
-        blog(LOG_WARNING, "[AI Captions] Cannot start captioning: Groq API Key is empty");
+        std::string provName = (s.provider == "gemini") ? "Google Gemini" : "Groq";
+        textWriter->updateText("⚠️ [AI Captions] يرجى إدخال مفتاح " + provName + " API في قائمة Tools");
+        blog(LOG_WARNING, "[AI Captions] Cannot start captioning: API Key for %s is empty", s.provider.c_str());
         return false;
     }
 
@@ -78,8 +80,8 @@ bool PluginManager::startCaptioning() {
     bool ok = audioCapture->start(s.audio_source_name);
     if (ok) {
         isCaptioning = true;
-        blog(LOG_INFO, "[AI Captions] Captioning session STARTED (Audio: '%s', Text: '%s')",
-             s.audio_source_name.c_str(), s.text_source_name.c_str());
+        blog(LOG_INFO, "[AI Captions] Captioning session STARTED using provider: %s (Audio: '%s', Text: '%s')",
+             s.provider.c_str(), s.audio_source_name.c_str(), s.text_source_name.c_str());
     } else {
         blog(LOG_ERROR, "[AI Captions] Failed to attach audio source '%s'", s.audio_source_name.c_str());
     }
@@ -165,22 +167,36 @@ void PluginManager::onStreamingStopped() {
 
 void PluginManager::onSegmentReady(const std::vector<uint8_t> &wavData, int64_t startMs, int64_t endMs) {
     PluginSettings s = getSettings();
-    if (s.api_key.empty()) return;
+    if (s.getActiveApiKey().empty()) return;
 
     pendingTranscriptions++;
 
-    GroqWhisperClient::transcribeAsync(
-        wavData,
-        startMs,
-        endMs,
-        s.api_key,
-        s.model,
-        s.language,
-        s.custom_keywords,
-        [this](bool success, const std::string &text, int64_t sMs, int64_t eMs) {
-            this->onTranscriptionResult(success, text, sMs, eMs);
-        }
-    );
+    if (s.provider == "gemini") {
+        GeminiClient::transcribeAsync(
+            wavData,
+            startMs,
+            endMs,
+            s.gemini_api_key,
+            s.gemini_model,
+            s.custom_keywords,
+            [this](bool success, const std::string &text, int64_t sMs, int64_t eMs) {
+                this->onTranscriptionResult(success, text, sMs, eMs);
+            }
+        );
+    } else {
+        GroqWhisperClient::transcribeAsync(
+            wavData,
+            startMs,
+            endMs,
+            s.groq_api_key,
+            s.groq_model,
+            s.language,
+            s.custom_keywords,
+            [this](bool success, const std::string &text, int64_t sMs, int64_t eMs) {
+                this->onTranscriptionResult(success, text, sMs, eMs);
+            }
+        );
+    }
 }
 
 bool PluginManager::isHallucination(const std::string &rawText) {
@@ -277,13 +293,14 @@ void PluginManager::startQuickTest(
     int durationSec,
     std::function<void(bool ok, const std::string &message)> callback
 ) {
-    if (testSettings.api_key.empty()) {
-        if (callback) callback(false, "يرجى كتابة مفتاح Groq API أولاً.");
+    if (testSettings.getActiveApiKey().empty()) {
+        std::string name = (testSettings.provider == "gemini") ? "Google Gemini" : "Groq";
+        if (callback) callback(false, "يرجى كتابة مفتاح " + name + " API أولاً.");
         return;
     }
 
-    blog(LOG_INFO, "[AI Captions] Starting Quick Test for %d seconds on '%s'...",
-         durationSec, testSettings.audio_source_name.c_str());
+    blog(LOG_INFO, "[AI Captions] Starting Quick Test (%s) for %d seconds on '%s'...",
+         testSettings.provider.c_str(), durationSec, testSettings.audio_source_name.c_str());
 
     audioCapture->startTestCapture(
         testSettings.audio_source_name,
@@ -311,22 +328,32 @@ void PluginManager::startQuickTest(
             std::vector<uint8_t> wavData = WavEncoder::encode16BitMono(samples.data(), samples.size(), 16000);
 
             std::string errorMsg;
-            std::string text = GroqWhisperClient::transcribe(
-                wavData,
-                testSettings.api_key,
-                testSettings.model,
-                testSettings.language,
-                testSettings.custom_keywords,
-                &errorMsg
-            );
+            std::string text;
+            if (testSettings.provider == "gemini") {
+                text = GeminiClient::transcribe(
+                    wavData,
+                    testSettings.gemini_api_key,
+                    testSettings.gemini_model,
+                    testSettings.custom_keywords,
+                    &errorMsg
+                );
+            } else {
+                text = GroqWhisperClient::transcribe(
+                    wavData,
+                    testSettings.groq_api_key,
+                    testSettings.groq_model,
+                    testSettings.language,
+                    testSettings.custom_keywords,
+                    &errorMsg
+                );
+            }
 
             if (!text.empty()) {
-                // Also update the live OBS text source immediately so the user sees it on screen!
                 textWriter->setSourceName(testSettings.text_source_name);
                 textWriter->updateText(text);
                 if (callback) callback(true, text);
             } else {
-                std::string err = errorMsg.empty() ? "فشل التعرف على الصوت من Groq API." : errorMsg;
+                std::string err = errorMsg.empty() ? "فشل التعرف على الصوت من محرك الذكاء الاصطناعي." : errorMsg;
                 if (callback) callback(false, err);
             }
         }

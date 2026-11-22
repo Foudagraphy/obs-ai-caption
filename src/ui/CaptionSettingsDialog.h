@@ -25,13 +25,23 @@ public:
 private slots:
     void onSaveClicked();
     void onCancelClicked();
-    void onToggleKeyVisibility();
+    void onToggleGeminiKeyVisibility();
+    void onToggleGroqKeyVisibility();
+    void onProviderChanged(int index);
     void onTestClicked();
 
 private:
-    QLineEdit *apiKeyEdit;
-    QPushButton *toggleKeyBtn;
-    QComboBox *modelCombo;
+    QComboBox *providerCombo;
+
+    QWidget *geminiKeyRow;
+    QLineEdit *geminiKeyEdit;
+    QPushButton *toggleGeminiKeyBtn;
+    QLabel *geminiHelpLabel;
+
+    QWidget *groqKeyRow;
+    QLineEdit *groqKeyEdit;
+    QPushButton *toggleGroqKeyBtn;
+
     QComboBox *audioSourceCombo;
     QComboBox *textSourceCombo;
     QTextEdit *customKeywordsEdit;

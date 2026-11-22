@@ -6,11 +6,20 @@
 struct PluginSettings {
     bool enabled = true;
     
-    // Groq API Settings
-    std::string api_key = "";
-    std::string model = "whisper-large-v3";
+    // AI Provider: "gemini" or "groq"
+    std::string provider = "gemini";
+
+    // Google Gemini Settings (The Antigravity Engine)
+    std::string gemini_api_key = "";
+    std::string gemini_model = "gemini-2.0-flash";
+
+    // Groq Settings
+    std::string groq_api_key = "";
+    std::string groq_model = "whisper-large-v3-turbo";
     std::string language = "ar";
-    std::string custom_keywords = "Lightroom, Capture One, Color Grading, Photoshop, Masking, Exposure, LUT, White Balance, Highlights, Shadows, Premiere Pro";
+
+    // Common technical vocabulary biasing
+    std::string custom_keywords = "Lightroom, Capture One, Photoshop, Masking, Exposure, LUT, White Balance, Highlights, Shadows, Color Grading, Premiere Pro";
     
     // Audio & VAD Settings
     std::string audio_source_name = "Mic/Aux";
@@ -33,15 +42,45 @@ struct PluginSettings {
     bool sync_with_recording = true;
     bool sync_with_streaming = false;
 
+    // Helper to get active API key
+    std::string getActiveApiKey() const {
+        if (provider == "gemini") {
+            return gemini_api_key;
+        } else {
+            return groq_api_key;
+        }
+    }
+
     void load(obs_data_t *data) {
         if (!data) return;
         enabled = obs_data_get_bool(data, "enabled");
-        
-        const char *key = obs_data_get_string(data, "api_key");
-        if (key) api_key = key;
 
-        const char *m = obs_data_get_string(data, "model");
-        if (m && strlen(m) > 0) model = m;
+        const char *prov = obs_data_get_string(data, "provider");
+        if (prov && strlen(prov) > 0) provider = prov;
+
+        const char *gKey = obs_data_get_string(data, "gemini_api_key");
+        if (gKey) gemini_api_key = gKey;
+
+        const char *gMod = obs_data_get_string(data, "gemini_model");
+        if (gMod && strlen(gMod) > 0) gemini_model = gMod;
+
+        const char *grKey = obs_data_get_string(data, "groq_api_key");
+        if (grKey) groq_api_key = grKey;
+
+        const char *grMod = obs_data_get_string(data, "groq_model");
+        if (grMod && strlen(grMod) > 0) groq_model = grMod;
+
+        // Legacy api_key fallback migration
+        const char *oldKey = obs_data_get_string(data, "api_key");
+        if (oldKey && strlen(oldKey) > 0) {
+            std::string k(oldKey);
+            if (k.rfind("AIzaSy", 0) == 0 && gemini_api_key.empty()) {
+                gemini_api_key = k;
+                provider = "gemini";
+            } else if (k.rfind("gsk_", 0) == 0 && groq_api_key.empty()) {
+                groq_api_key = k;
+            }
+        }
 
         const char *lang = obs_data_get_string(data, "language");
         if (lang && strlen(lang) > 0) language = lang;
@@ -53,10 +92,10 @@ struct PluginSettings {
         if (asrc && strlen(asrc) > 0) audio_source_name = asrc;
 
         pre_roll_ms = (int)obs_data_get_int(data, "pre_roll_ms");
-        if (pre_roll_ms <= 0) pre_roll_ms = 400;
+        if (pre_roll_ms <= 0) pre_roll_ms = 350;
 
         silence_threshold_ms = (int)obs_data_get_int(data, "silence_threshold_ms");
-        if (silence_threshold_ms <= 0) silence_threshold_ms = 800;
+        if (silence_threshold_ms <= 0) silence_threshold_ms = 600;
 
         double vad = obs_data_get_double(data, "vad_sensitivity");
         if (vad > 0.0) vad_sensitivity = (float)vad;
@@ -85,8 +124,11 @@ struct PluginSettings {
     void save(obs_data_t *data) const {
         if (!data) return;
         obs_data_set_bool(data, "enabled", enabled);
-        obs_data_set_string(data, "api_key", api_key.c_str());
-        obs_data_set_string(data, "model", model.c_str());
+        obs_data_set_string(data, "provider", provider.c_str());
+        obs_data_set_string(data, "gemini_api_key", gemini_api_key.c_str());
+        obs_data_set_string(data, "gemini_model", gemini_model.c_str());
+        obs_data_set_string(data, "groq_api_key", groq_api_key.c_str());
+        obs_data_set_string(data, "groq_model", groq_model.c_str());
         obs_data_set_string(data, "language", language.c_str());
         obs_data_set_string(data, "custom_keywords", custom_keywords.c_str());
         obs_data_set_string(data, "audio_source_name", audio_source_name.c_str());

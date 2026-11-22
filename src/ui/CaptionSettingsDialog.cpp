@@ -9,8 +9,8 @@
 
 CaptionSettingsDialog::CaptionSettingsDialog(QWidget *parent)
     : QDialog(parent) {
-    setWindowTitle("AI Closed Captions Settings - مساعد الترجمة الذكي");
-    resize(580, 620);
+    setWindowTitle("AI Closed Captions Settings - مساعد الترجمة والذكاء الاصطناعي");
+    resize(600, 640);
     setupUI();
     populateObsSources();
 }
@@ -24,31 +24,64 @@ void CaptionSettingsDialog::setupUI() {
 
     // --- Tab 1: AI Engine & Keywords ---
     QWidget *tabEngine = new QWidget();
-    QFormLayout *engineLayout = new QFormLayout(tabEngine);
+    QVBoxLayout *engineMainLayout = new QVBoxLayout(tabEngine);
+    QFormLayout *engineLayout = new QFormLayout();
 
-    apiKeyEdit = new QLineEdit(this);
-    apiKeyEdit->setEchoMode(QLineEdit::Password);
-    apiKeyEdit->setPlaceholderText("gsk_...");
+    providerCombo = new QComboBox(this);
+    providerCombo->addItem("🌟 Google Gemini 2.0 Flash (محرك Antigravity - الأفضل للعامية والمصطلحات)", "gemini");
+    providerCombo->addItem("Groq Whisper Large v3 (محرك Groq السريع)", "groq");
+    providerCombo->setStyleSheet("QComboBox { font-weight: bold; font-size: 13px; padding: 4px; }");
+    connect(providerCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &CaptionSettingsDialog::onProviderChanged);
+    engineLayout->addRow("محرك الذكاء الاصطناعي (AI Provider):", providerCombo);
 
-    toggleKeyBtn = new QPushButton("👁️", this);
-    toggleKeyBtn->setFixedWidth(36);
-    connect(toggleKeyBtn, &QPushButton::clicked, this, &CaptionSettingsDialog::onToggleKeyVisibility);
+    // 1. Google Gemini API Key Row
+    geminiKeyRow = new QWidget(this);
+    QVBoxLayout *gCol = new QVBoxLayout(geminiKeyRow);
+    gCol->setContentsMargins(0, 0, 0, 0);
 
-    QHBoxLayout *keyLayout = new QHBoxLayout();
-    keyLayout->addWidget(apiKeyEdit);
-    keyLayout->addWidget(toggleKeyBtn);
-    engineLayout->addRow("Groq API Key:", keyLayout);
+    QHBoxLayout *gRow = new QHBoxLayout();
+    geminiKeyEdit = new QLineEdit(geminiKeyRow);
+    geminiKeyEdit->setEchoMode(QLineEdit::Password);
+    geminiKeyEdit->setPlaceholderText("AIzaSy...");
+    toggleGeminiKeyBtn = new QPushButton("👁️", geminiKeyRow);
+    toggleGeminiKeyBtn->setFixedWidth(36);
+    connect(toggleGeminiKeyBtn, &QPushButton::clicked, this, &CaptionSettingsDialog::onToggleGeminiKeyVisibility);
+    gRow->addWidget(geminiKeyEdit);
+    gRow->addWidget(toggleGeminiKeyBtn);
 
-    modelCombo = new QComboBox(this);
-    modelCombo->addItem("whisper-large-v3 (الأعلى دقة للعامية والمصطلحات)", "whisper-large-v3");
-    modelCombo->addItem("whisper-large-v3-turbo (الأسرع)", "whisper-large-v3-turbo");
-    engineLayout->addRow("موديل الذكاء الاصطناعي:", modelCombo);
+    geminiHelpLabel = new QLabel(
+        "<span style='color: #27ae60; font-weight: bold;'>مجاني تماماً 100%: </span>"
+        "<a href=\"https://aistudio.google.com/app/apikey\" style=\"color: #0078d4; font-weight: bold;\">"
+        "اضغط هنا لفتح صفحة Google AI Studio ونسخ المفتاح في 10 ثوانٍ</a>",
+        geminiKeyRow
+    );
+    geminiHelpLabel->setOpenExternalLinks(true);
 
+    gCol->addLayout(gRow);
+    gCol->addWidget(geminiHelpLabel);
+    engineLayout->addRow("Google Gemini API Key:", geminiKeyRow);
+
+    // 2. Groq API Key Row
+    groqKeyRow = new QWidget(this);
+    QHBoxLayout *groqRowLayout = new QHBoxLayout(groqKeyRow);
+    groqRowLayout->setContentsMargins(0, 0, 0, 0);
+    groqKeyEdit = new QLineEdit(groqKeyRow);
+    groqKeyEdit->setEchoMode(QLineEdit::Password);
+    groqKeyEdit->setPlaceholderText("gsk_...");
+    toggleGroqKeyBtn = new QPushButton("👁️", groqKeyRow);
+    toggleGroqKeyBtn->setFixedWidth(36);
+    connect(toggleGroqKeyBtn, &QPushButton::clicked, this, &CaptionSettingsDialog::onToggleGroqKeyVisibility);
+    groqRowLayout->addWidget(groqKeyEdit);
+    groqRowLayout->addWidget(toggleGroqKeyBtn);
+    engineLayout->addRow("Groq API Key:", groqKeyRow);
+
+    // Technical Keywords
     customKeywordsEdit = new QTextEdit(this);
-    customKeywordsEdit->setFixedHeight(90);
-    customKeywordsEdit->setPlaceholderText("مثال: Lightroom, Capture One, Color Grading, Photoshop, Masking, Exposure, LUT, White Balance");
-    engineLayout->addRow("المصطلحات الإنجليزية الخاصة بشغلك:\n(يكتبها إنجليزي وسط العربي)", customKeywordsEdit);
+    customKeywordsEdit->setFixedHeight(85);
+    customKeywordsEdit->setPlaceholderText("مثال: Lightroom, Capture One, Photoshop, Masking, Exposure, LUT, White Balance, Color Grading");
+    engineLayout->addRow("المصطلحات الإنجليزية الخاصة بشغلك:\n(يكتبها إنجليزي وسط العربي تلقائياً)", customKeywordsEdit);
 
+    engineMainLayout->addLayout(engineLayout);
     tabs->addTab(tabEngine, "محرك الذكاء الاصطناعي والمصطلحات");
 
     // --- Tab 2: OBS Sources & Recording Sync ---
@@ -134,7 +167,7 @@ void CaptionSettingsDialog::setupUI() {
     connect(testBtn, &QPushButton::clicked, this, &CaptionSettingsDialog::onTestClicked);
     testBtnLayout->addWidget(testBtn);
 
-    testStatusLabel = new QLabel("اضغط للتحدث 3 ثوانٍ والتأكد من استجابة المايك وترجمة Groq فوراً دون الحاجة لتسجيل فيديو.", this);
+    testStatusLabel = new QLabel("اضغط للتحدث 3 ثوانٍ والتأكد من دقة الترجمة بالعامية والمصطلحات فوراً دون الحاجة لتسجيل فيديو.", this);
     testStatusLabel->setWordWrap(true);
     testStatusLabel->setStyleSheet("color: #444; font-size: 12px; padding: 4px;");
 
@@ -158,6 +191,19 @@ void CaptionSettingsDialog::setupUI() {
     btnLayout->addWidget(cancelBtn);
 
     mainLayout->addLayout(btnLayout);
+
+    onProviderChanged(0);
+}
+
+void CaptionSettingsDialog::onProviderChanged(int index) {
+    QString currentProv = providerCombo->currentData().toString();
+    if (currentProv == "gemini") {
+        geminiKeyRow->setVisible(true);
+        groqKeyRow->setVisible(false);
+    } else {
+        geminiKeyRow->setVisible(false);
+        groqKeyRow->setVisible(true);
+    }
 }
 
 void CaptionSettingsDialog::populateObsSources() {
@@ -195,20 +241,32 @@ void CaptionSettingsDialog::populateObsSources() {
     obs_enum_sources(enumCallback, this);
 }
 
-void CaptionSettingsDialog::onToggleKeyVisibility() {
-    if (apiKeyEdit->echoMode() == QLineEdit::Password) {
-        apiKeyEdit->setEchoMode(QLineEdit::Normal);
-        toggleKeyBtn->setText("🔒");
+void CaptionSettingsDialog::onToggleGeminiKeyVisibility() {
+    if (geminiKeyEdit->echoMode() == QLineEdit::Password) {
+        geminiKeyEdit->setEchoMode(QLineEdit::Normal);
+        toggleGeminiKeyBtn->setText("🔒");
     } else {
-        apiKeyEdit->setEchoMode(QLineEdit::Password);
-        toggleKeyBtn->setText("👁️");
+        geminiKeyEdit->setEchoMode(QLineEdit::Password);
+        toggleGeminiKeyBtn->setText("👁️");
+    }
+}
+
+void CaptionSettingsDialog::onToggleGroqKeyVisibility() {
+    if (groqKeyEdit->echoMode() == QLineEdit::Password) {
+        groqKeyEdit->setEchoMode(QLineEdit::Normal);
+        toggleGroqKeyBtn->setText("🔒");
+    } else {
+        groqKeyEdit->setEchoMode(QLineEdit::Password);
+        toggleGroqKeyBtn->setText("👁️");
     }
 }
 
 void CaptionSettingsDialog::onTestClicked() {
     PluginSettings current = getSettings();
-    if (current.api_key.empty()) {
-        testStatusLabel->setText("<span style='color: #d9534f; font-weight: bold;'>⚠️ يرجى كتابة Groq API Key أولاً!</span>");
+    if (current.getActiveApiKey().empty()) {
+        std::string provName = (current.provider == "gemini") ? "Google Gemini" : "Groq";
+        testStatusLabel->setText(QString("<span style='color: #d9534f; font-weight: bold;'>⚠️ يرجى كتابة مفتاح %1 API أولاً!</span>")
+                                 .arg(QString::fromStdString(provName)));
         return;
     }
 
@@ -216,7 +274,6 @@ void CaptionSettingsDialog::onTestClicked() {
     testStatusLabel->setText("<span style='color: #e67e22; font-weight: bold;'>🔴 جاري الاستماع للميكروفون لمدة 3 ثوانٍ... تكلم الآن بصوتك!</span>");
 
     PluginManager::instance().startQuickTest(current, 3, [this](bool ok, const std::string &msg) {
-        // Safe dispatch back to Qt main GUI thread
         QMetaObject::invokeMethod(this, [this, ok, msg]() {
             testBtn->setEnabled(true);
             if (ok) {
@@ -235,10 +292,12 @@ void CaptionSettingsDialog::onTestClicked() {
 }
 
 void CaptionSettingsDialog::loadSettings(const PluginSettings &s) {
-    apiKeyEdit->setText(QString::fromStdString(s.api_key));
+    int provIdx = providerCombo->findData(QString::fromStdString(s.provider));
+    if (provIdx >= 0) providerCombo->setCurrentIndex(provIdx);
+    onProviderChanged(provIdx >= 0 ? provIdx : 0);
 
-    int modelIdx = modelCombo->findData(QString::fromStdString(s.model));
-    if (modelIdx >= 0) modelCombo->setCurrentIndex(modelIdx);
+    geminiKeyEdit->setText(QString::fromStdString(s.gemini_api_key));
+    groqKeyEdit->setText(QString::fromStdString(s.groq_api_key));
 
     int audioIdx = audioSourceCombo->findData(QString::fromStdString(s.audio_source_name));
     if (audioIdx >= 0) audioSourceCombo->setCurrentIndex(audioIdx);
@@ -264,8 +323,12 @@ void CaptionSettingsDialog::loadSettings(const PluginSettings &s) {
 
 PluginSettings CaptionSettingsDialog::getSettings() const {
     PluginSettings s;
-    s.api_key = apiKeyEdit->text().trimmed().toStdString();
-    s.model = modelCombo->currentData().toString().toStdString();
+    s.provider = providerCombo->currentData().toString().toStdString();
+    s.gemini_api_key = geminiKeyEdit->text().trimmed().toStdString();
+    s.groq_api_key = groqKeyEdit->text().trimmed().toStdString();
+    s.gemini_model = "gemini-2.0-flash";
+    s.groq_model = "whisper-large-v3-turbo";
+
     s.audio_source_name = audioSourceCombo->currentData().toString().toStdString();
     s.text_source_name = textSourceCombo->currentData().toString().toStdString();
     s.custom_keywords = customKeywordsEdit->toPlainText().trimmed().toStdString();
